@@ -2,11 +2,24 @@ import SwiftUI
 
 // MARK: - Main View
 struct ContentView: View {
-    @StateObject private var viewModel = BusViewModel()
+    @StateObject private var viewModel = TransportViewModel()
     
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
+                // Transport type picker
+                Picker("Transport Type", selection: $viewModel.selectedTransportType) {
+                    ForEach(TransportType.allCases) { type in
+                        Text(type.displayName)
+                            .tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .onChange(of: viewModel.selectedTransportType) { _ in
+                    viewModel.fetchDepartures()
+                }
+                
                 if viewModel.isLoading {
                     ProgressView("Loading departures...")
                 } else if let error = viewModel.errorMessage {
@@ -22,7 +35,7 @@ struct ContentView: View {
                     }
                 } else if viewModel.departures.isEmpty {
                     VStack(spacing: 10) {
-                        Image(systemName: "bus")
+                        Image(systemName: viewModel.selectedTransportType == .bus ? "bus" : "tram")
                             .foregroundColor(.secondary)
                             .font(.largeTitle)
                         Text("No departures")
@@ -33,7 +46,7 @@ struct ContentView: View {
                     }
                 } else {
                     List(viewModel.departures) { departure in
-                        BusDepartureRow(departure: departure)
+                        TransportDepartureRow(departure: departure)
                     }
                     .listStyle(.plain)
                 }
@@ -54,7 +67,7 @@ struct ContentView: View {
                 .padding(.horizontal)
                 .disabled(viewModel.isLoading)
             }
-            .navigationTitle("Bus Departures")
+            .navigationTitle("\(viewModel.selectedTransportType.displayName) Departures")
             .onAppear {
                 viewModel.fetchDepartures()
             }
@@ -62,15 +75,15 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Bus Departure Row
-struct BusDepartureRow: View {
+// MARK: - Transport Departure Row
+struct TransportDepartureRow: View {
     let departure: StopEvent
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                // Bus number badge
-                Text(departure.transportation.number)
+                // Transport number badge
+                Text(departure.transportation.number.split(separator: " ").first.map(String.init) ?? departure.transportation.number)
                     .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(Color(hex: departure.transportation.colour.foreground))
@@ -78,7 +91,7 @@ struct BusDepartureRow: View {
                     .padding(.vertical, 6)
                     .background(Color(hex: departure.transportation.colour.background))
                     .cornerRadius(6)
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(departure.transportation.destination.name)
                         .font(.subheadline)
@@ -104,6 +117,14 @@ struct BusDepartureRow: View {
                             .font(.caption)
                             .foregroundColor(statusColor())
                             .fontWeight(.semibold)
+                    }
+                    
+                    // Show high frequency indicator for light rail
+                    if departure.isHighFrequency == true {
+                        Text("High Frequency")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                            .fontWeight(.medium)
                     }
                 }
             }
@@ -136,21 +157,21 @@ struct BusDepartureRow: View {
 }
 
 // MARK: - View Model
-// MARK: - View Model
-class BusViewModel: ObservableObject {
+class TransportViewModel: ObservableObject {
     @Published var departures: [StopEvent] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
-    
-    private let stopId = "G203519"
+    @Published var selectedTransportType: TransportType = .bus
     
     func fetchDepartures() {
         isLoading = true
         errorMessage = nil
         
+        let stopId = selectedTransportType.defaultStopId
+        
         Task {
             do {
-                let allDepartures = try await BusService.shared.fetchDepartures(for: stopId)
+                let allDepartures = try await TransportService.shared.fetchDepartures(for: stopId, transportType: selectedTransportType)
                 
                 DispatchQueue.main.async {
                     self.departures = Array(allDepartures.prefix(10)) // Show up to 10 departures
@@ -196,7 +217,7 @@ extension Color {
 
 // MARK: - App Entry Point
 @main
-struct BusTrackerApp: App {
+struct TransportTrackerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

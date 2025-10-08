@@ -13,26 +13,26 @@ struct Provider: AppIntentTimelineProvider {
         SimpleEntry(
             date: Date(),
             configuration: ConfigurationAppIntent(),
-            nextBus: nil,
+            nextTransport: nil,
             error: nil
         )
     }
 
     func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> SimpleEntry {
         do {
-            let departures = try await BusService.shared.fetchDepartures(for: configuration.busStopId)
-            let nextBus = departures.first
+            let departures = try await TransportService.shared.fetchDepartures(for: configuration.actualStopId, transportType: configuration.transportType.transportType)
+            let nextTransport = departures.first
             return SimpleEntry(
                 date: Date(),
                 configuration: configuration,
-                nextBus: nextBus,
+                nextTransport: nextTransport,
                 error: nil
             )
         } catch {
             return SimpleEntry(
                 date: Date(),
                 configuration: configuration,
-                nextBus: nil,
+                nextTransport: nil,
                 error: error.localizedDescription
             )
         }
@@ -43,8 +43,8 @@ struct Provider: AppIntentTimelineProvider {
         let currentDate = Date()
         
         do {
-            let departures = try await BusService.shared.fetchDepartures(for: configuration.busStopId)
-            let nextBus = departures.first
+            let departures = try await TransportService.shared.fetchDepartures(for: configuration.actualStopId, transportType: configuration.transportType.transportType)
+            let nextTransport = departures.first
             
             // Create timeline entries every 2 minutes for the next 30 minutes
             for minuteOffset in stride(from: 0, to: 30, by: 2) {
@@ -52,7 +52,7 @@ struct Provider: AppIntentTimelineProvider {
                 let entry = SimpleEntry(
                     date: entryDate,
                     configuration: configuration,
-                    nextBus: nextBus,
+                    nextTransport: nextTransport,
                     error: nil
                 )
                 entries.append(entry)
@@ -62,7 +62,7 @@ struct Provider: AppIntentTimelineProvider {
             let entry = SimpleEntry(
                 date: currentDate,
                 configuration: configuration,
-                nextBus: nil,
+                nextTransport: nil,
                 error: error.localizedDescription
             )
             entries.append(entry)
@@ -75,7 +75,7 @@ struct Provider: AppIntentTimelineProvider {
 struct SimpleEntry: TimelineEntry {
     let date: Date
     let configuration: ConfigurationAppIntent
-    let nextBus: StopEvent?
+    let nextTransport: StopEvent?
     let error: String?
 }
 
@@ -96,23 +96,23 @@ struct BusTrackerWidgetEntryView : View {
                     .multilineTextAlignment(.center)
             }
             .padding(8)
-        } else if let bus = entry.nextBus {
+        } else if let transport = entry.nextTransport {
             VStack(spacing: 4) {
                 HStack {
-                    // Bus number badge
-                    Text(bus.transportation.number)
+                    // Transport number badge
+                    Text(transport.transportation.number.split(separator: " ").first.map(String.init) ?? transport.transportation.number)
                         .font(.headline)
                         .fontWeight(.bold)
-                        .foregroundColor(Color(hex: bus.transportation.colour.foreground))
+                        .foregroundColor(Color(hex: transport.transportation.colour.foreground))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color(hex: bus.transportation.colour.background))
+                        .background(Color(hex: transport.transportation.colour.background))
                         .cornerRadius(4)
                     
                     Spacer()
                     
                     // Time until departure
-                    Text(bus.timeUntilDeparture())
+                    Text(transport.timeUntilDeparture())
                         .font(.headline)
                         .fontWeight(.bold)
                         .foregroundColor(.primary)
@@ -120,30 +120,35 @@ struct BusTrackerWidgetEntryView : View {
                 }
                 
                 // Destination
-                Text(bus.transportation.destination.name)
+                Text(transport.transportation.destination.name)
                     .font(.caption)
                     .multilineTextAlignment(.leading)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
                 // Delay status if any
-                if let delay = bus.delayStatus() {
+                if let delay = transport.delayStatus() {
                     Text(delay)
                         .font(.caption2)
                         .foregroundColor(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("On Time")
+                        .font(.caption2)
+                        .foregroundColor(.green)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .padding(8)
         } else {
             VStack(spacing: 4) {
-                Image(systemName: "bus")
+                Image(systemName: entry.configuration.transportType == .bus ? "bus" : "tram")
                     .foregroundColor(.secondary)
                     .font(.title2)
-                Text("No Buses")
+                Text("No \(entry.configuration.transportType.transportType.displayName)")
                     .font(.caption)
                     .fontWeight(.medium)
-                Text("Stop: \(entry.configuration.busStopId)")
+                Text("Stop: \(entry.configuration.actualStopId)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -153,29 +158,31 @@ struct BusTrackerWidgetEntryView : View {
 }
 
 struct BusTrackerWidget: Widget {
-    let kind: String = "BusTrackerWidget"
+    let kind: String = "TransportTrackerWidget"
 
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: kind, intent: ConfigurationAppIntent.self, provider: Provider()) { entry in
             BusTrackerWidgetEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
-        .configurationDisplayName("Bus Tracker")
-        .description("Shows the next bus departure for your stop.")
+        .configurationDisplayName("Transport Tracker")
+        .description("Shows the next departure for your bus or light rail stop.")
         .supportedFamilies([.systemSmall, .accessoryRectangular])
     }
 }
 
 extension ConfigurationAppIntent {
-    fileprivate static var defaultStop: ConfigurationAppIntent {
+    fileprivate static var defaultBusStop: ConfigurationAppIntent {
         let intent = ConfigurationAppIntent()
-        intent.busStopId = "G203519"
+        intent.transportType = .bus
+        intent.stopId = "G203519"
         return intent
     }
     
-    fileprivate static var anotherStop: ConfigurationAppIntent {
+    fileprivate static var defaultLightRailStop: ConfigurationAppIntent {
         let intent = ConfigurationAppIntent()
-        intent.busStopId = "G203520"
+        intent.transportType = .lightRail
+        intent.stopId = "203294"
         return intent
     }
 }
@@ -211,6 +218,6 @@ extension Color {
 #Preview(as: .systemSmall) {
     BusTrackerWidget()
 } timeline: {
-    SimpleEntry(date: .now, configuration: .defaultStop, nextBus: nil, error: nil)
-    SimpleEntry(date: .now, configuration: .anotherStop, nextBus: nil, error: nil)
+    SimpleEntry(date: .now, configuration: .defaultBusStop, nextTransport: nil, error: nil)
+    SimpleEntry(date: .now, configuration: .defaultLightRailStop, nextTransport: nil, error: nil)
 }
