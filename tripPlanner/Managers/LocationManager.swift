@@ -49,7 +49,18 @@ class LocationManager: NSObject {
     
     // MARK: - Public Methods
     func requestPermission() {
-        locationManager.requestWhenInUseAuthorization()
+        switch authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            // Handle case where user needs to go to Settings
+            locationError = .notAuthorized
+        case .authorizedWhenInUse, .authorizedAlways:
+            // Already authorized, start location updates
+            startUpdatingLocation()
+        @unknown default:
+            locationManager.requestWhenInUseAuthorization()
+        }
     }
     
     func startUpdatingLocation() {
