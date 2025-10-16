@@ -381,6 +381,7 @@
 				DEVELOPMENT_TEAM = Z43R7TX7Z9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app uses your location to find the nearest transport stops and show real-time departure information.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app uses your location to keep widgets updated with the nearest transport stop departures.";
 				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "This app uses your location to keep widgets updated with the nearest transport stop departures.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -412,6 +413,7 @@
 				DEVELOPMENT_TEAM = Z43R7TX7Z9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "This app uses your location to find the nearest transport stops and show real-time departure information.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "This app uses your location to keep widgets updated with the nearest transport stop departures.";
 				INFOPLIST_KEY_NSLocationAlwaysUsageDescription = "This app uses your location to keep widgets updated with the nearest transport stop departures.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
