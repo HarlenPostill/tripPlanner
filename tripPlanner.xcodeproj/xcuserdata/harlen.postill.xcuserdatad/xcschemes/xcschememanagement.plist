@@ -7,7 +7,7 @@
 		<key>BusTrackerWidgetExtension.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>1</integer>
+			<integer>0</integer>
 		</dict>
 		<key>tripPlanner.xcscheme_^#shared#^_</key>
 		<dict>

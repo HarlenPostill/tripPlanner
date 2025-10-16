@@ -216,7 +216,7 @@ extension Color {
 }
 
 // MARK: - App Entry Point
-@main
+// Note: @main is handled by tripPlannerApp.swift
 struct TransportTrackerApp: App {
     var body: some Scene {
         WindowGroup {

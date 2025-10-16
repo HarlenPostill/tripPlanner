@@ -7,5 +7,9 @@
 		<key>NSExtensionPointIdentifier</key>
 		<string>com.apple.widgetkit-extension</string>
 	</dict>
+	<key>NSWidgetWantsLocation</key>
+	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This widget uses your location to show departures from the nearest transport stop.</string>
 </dict>
 </plist>

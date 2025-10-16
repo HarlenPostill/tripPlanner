@@ -7,6 +7,7 @@
 
 import WidgetKit
 import SwiftUI
+import CoreLocation
 
 struct Provider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> SimpleEntry {
@@ -14,26 +15,34 @@ struct Provider: AppIntentTimelineProvider {
             date: Date(),
             configuration: ConfigurationAppIntent(),
             nextTransport: nil,
-            error: nil
+            error: nil,
+            stopName: nil
         )
     }
 
     func snapshot(for configuration: ConfigurationAppIntent, in context: Context) async -> SimpleEntry {
+        let stopInfo = await getStopId(for: configuration, in: context)
+        
         do {
-            let departures = try await TransportService.shared.fetchDepartures(for: configuration.actualStopId, transportType: configuration.transportType.transportType)
+            let departures = try await TransportService.shared.fetchDepartures(
+                for: stopInfo.stopId,
+                transportType: configuration.transportType.transportType
+            )
             let nextTransport = departures.first
             return SimpleEntry(
                 date: Date(),
                 configuration: configuration,
                 nextTransport: nextTransport,
-                error: nil
+                error: nil,
+                stopName: stopInfo.name
             )
         } catch {
             return SimpleEntry(
                 date: Date(),
                 configuration: configuration,
                 nextTransport: nil,
-                error: error.localizedDescription
+                error: error.localizedDescription,
+                stopName: stopInfo.name
             )
         }
     }
@@ -42,8 +51,13 @@ struct Provider: AppIntentTimelineProvider {
         var entries: [SimpleEntry] = []
         let currentDate = Date()
         
+        let stopInfo = await getStopId(for: configuration, in: context)
+        
         do {
-            let departures = try await TransportService.shared.fetchDepartures(for: configuration.actualStopId, transportType: configuration.transportType.transportType)
+            let departures = try await TransportService.shared.fetchDepartures(
+                for: stopInfo.stopId,
+                transportType: configuration.transportType.transportType
+            )
             let nextTransport = departures.first
             
             // Create timeline entries every 2 minutes for the next 30 minutes
@@ -53,7 +67,8 @@ struct Provider: AppIntentTimelineProvider {
                     date: entryDate,
                     configuration: configuration,
                     nextTransport: nextTransport,
-                    error: nil
+                    error: nil,
+                    stopName: stopInfo.name
                 )
                 entries.append(entry)
             }
@@ -63,12 +78,50 @@ struct Provider: AppIntentTimelineProvider {
                 date: currentDate,
                 configuration: configuration,
                 nextTransport: nil,
-                error: error.localizedDescription
+                error: error.localizedDescription,
+                stopName: stopInfo.name
             )
             entries.append(entry)
         }
 
         return Timeline(entries: entries, policy: .atEnd)
+    }
+    
+    // MARK: - Helper Methods
+    private func getStopId(for configuration: ConfigurationAppIntent, in context: Context) async -> (stopId: String, name: String?) {
+        // If manual mode, use the configured stop ID
+        if configuration.mode == .manual {
+            return (configuration.actualStopId, nil)
+        }
+        
+        // For automatic mode, try to get location and find nearest stop
+        #if os(iOS)
+        // Check if we're in a location-capable context
+        let locationManager = CLLocationManager()
+        
+        // Check authorization status
+        if locationManager.authorizationStatus == .authorizedAlways ||
+           locationManager.authorizationStatus == .authorizedWhenInUse {
+            
+            // Load stops from shared storage
+            let stopsManager = SharedStopsManager.shared
+            let stops = stopsManager.loadStops()
+            
+            // Try to get current location (simplified for widget context)
+            if let userLocation = locationManager.location {
+                let filteredStops = stops.filter { $0.stopType.rawValue == configuration.transportType.rawValue }
+                
+                if let nearestStop = filteredStops.min(by: { stop1, stop2 in
+                    stop1.distance(from: userLocation) < stop2.distance(from: userLocation)
+                }) {
+                    return (nearestStop.stopId, nearestStop.name)
+                }
+            }
+        }
+        #endif
+        
+        // Fallback to default stop ID
+        return (configuration.actualStopId, nil)
     }
 }
 
@@ -77,6 +130,7 @@ struct SimpleEntry: TimelineEntry {
     let configuration: ConfigurationAppIntent
     let nextTransport: StopEvent?
     let error: String?
+    let stopName: String? // Optional stop name for location-based mode
 }
 
 struct BusTrackerWidgetEntryView : View {
@@ -126,6 +180,15 @@ struct BusTrackerWidgetEntryView : View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
+                // Stop name if in automatic mode
+                if entry.configuration.mode == .automatic, let stopName = entry.stopName {
+                    Text(stopName)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                
                 // Delay status if any
                 if let delay = transport.delayStatus() {
                     Text(delay)
@@ -148,9 +211,16 @@ struct BusTrackerWidgetEntryView : View {
                 Text("No \(entry.configuration.transportType.transportType.displayName)")
                     .font(.caption)
                     .fontWeight(.medium)
-                Text("Stop: \(entry.configuration.actualStopId)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                
+                if entry.configuration.mode == .automatic, let stopName = entry.stopName {
+                    Text(stopName)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Stop: \(entry.configuration.actualStopId)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
             .padding(8)
         }
@@ -174,15 +244,25 @@ struct BusTrackerWidget: Widget {
 extension ConfigurationAppIntent {
     fileprivate static var defaultBusStop: ConfigurationAppIntent {
         let intent = ConfigurationAppIntent()
+        intent.mode = .automatic
         intent.transportType = .bus
-        intent.stopId = "G203519"
+        intent.stopId = nil
         return intent
     }
     
     fileprivate static var defaultLightRailStop: ConfigurationAppIntent {
         let intent = ConfigurationAppIntent()
+        intent.mode = .automatic
         intent.transportType = .lightRail
-        intent.stopId = "203294"
+        intent.stopId = nil
+        return intent
+    }
+    
+    fileprivate static var manualBusStop: ConfigurationAppIntent {
+        let intent = ConfigurationAppIntent()
+        intent.mode = .manual
+        intent.transportType = .bus
+        intent.stopId = "G203519"
         return intent
     }
 }
@@ -218,6 +298,7 @@ extension Color {
 #Preview(as: .systemSmall) {
     BusTrackerWidget()
 } timeline: {
-    SimpleEntry(date: .now, configuration: .defaultBusStop, nextTransport: nil, error: nil)
-    SimpleEntry(date: .now, configuration: .defaultLightRailStop, nextTransport: nil, error: nil)
+    SimpleEntry(date: .now, configuration: .defaultBusStop, nextTransport: nil, error: nil, stopName: "Nearby Bus Stop")
+    SimpleEntry(date: .now, configuration: .defaultLightRailStop, nextTransport: nil, error: nil, stopName: "Nearby Light Rail")
+    SimpleEntry(date: .now, configuration: .manualBusStop, nextTransport: nil, error: nil, stopName: nil)
 }
